@@ -32,21 +32,30 @@ with said headers included, and said defines being printed out via pragma messag
     (multiple-value-bind (_ old-name file)
 	(rename-file (namestring file) (format nil "~a.c" (namestring file)))
       (declare (ignore _))
-      (let* ((output-file (format nil "~a-delete" (namestring file)))
-	     (process (uiop:launch-program (list "/usr/bin/env" "gcc" "-shared"
-						 "-o" output-file
-						 "-Werror" "-fPIC"
-						 (namestring file))
-					   :output :stream
-					   :error-output :stream)))
-	(prog1
-	    (loop for line in (uiop/stream:slurp-stream-lines (uiop:process-info-error-output process))
-		  for result = (cl-ppcre:register-groups-bind (key value)
-			      ("#pragma message: (.+): (.+)’" line)
-				 (list key value))
-		  when result collect result)
-	  (rename-file file old-name)
-	  (delete-file output-file))))))
+      (unwind-protect
+	   (let* ((output-file (format nil "~a-delete" (namestring file)))
+		  (process (uiop:launch-program (list "/usr/bin/env" "gcc" "-shared"
+						      "-o" output-file
+						      "-Werror" "-fPIC"
+						      (namestring file))
+						:output :stream
+						:error-output :stream))
+		  (exit-code (uiop:wait-process process)))
+
+	     ;; TODO: You could also extract more concrete error information here
+	     (when (plusp exit-code)
+	       (print (uiop/stream:slurp-stream-string (uiop:process-info-error-output process)))
+	       (error "Failed to compile defcenum! c temporary file. See log for details."))
+
+	     (prog1
+		 (loop for line in (uiop/stream:slurp-stream-lines (uiop:process-info-error-output process))
+		       for result = (cl-ppcre:register-groups-bind (key value)
+					("#pragma message: (.+): (.+)’" line)
+				      (list key value))
+		       when result collect result)
+
+	       (delete-file output-file)))
+	(rename-file file old-name)))))
 
 
 ;; ┬ ┬┌┬┐┬┬
