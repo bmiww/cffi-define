@@ -10,12 +10,18 @@
 (in-package :cffi-define)
 
 (defmacro defcenum! (name-and-options headers &body enum-list)
-  (let ((defines (read-defines headers (mapcar #'car enum-list))))
+  "Using passed headers, compile and read out define values for the enum-list and produce a cffi:defcenum macro call"
+  (let* ((defines (read-defines headers (mapcar #'car enum-list)))
+	 (faulty-defines (remove-if-not (lambda (item) item) (mapcar #'is-define-faulty defines))))
+    (when faulty-defines
+      (error (format nil "Faulty defines: ~a" faulty-defines)))
     `(cffi:defcenum ,name-and-options
        ,@(loop for (c-key key) in enum-list
 	       collect (list key (parse-integer (cadr (car (member (string c-key) defines :test 'equal :key 'car)))))))))
 
 (defun read-defines (headers defines)
+  "Given a list of headers and defines - produces a temporary c file
+with said headers included, and said defines being printed out via pragma message"
   (uiop:with-temporary-file (:stream stream :pathname file :prefix "" :suffix ".c")
     (loop for header in headers do (format stream "#include ~a~%" header))
     (format stream "#define XSTR(x) STR(x)~%")
@@ -43,59 +49,17 @@
 	  (delete-file output-file))))))
 
 
-;; ┌─┐─┐ ┬┌─┐┌┬┐┌─┐┬  ┌─┐┌─┐
-;; ├┤ ┌┴┬┘├─┤│││├─┘│  ├┤ └─┐
-;; └─┘┴ └─┴ ┴┴ ┴┴  ┴─┘└─┘└─┘
+;; ┬ ┬┌┬┐┬┬
+;; │ │ │ ││
+;; └─┘ ┴ ┴┴─┘
+(defun is-number? (string)
+  (handler-case (parse-integer string)
+    (error () nil)))
 
-;; https://github.com/torvalds/linux/blob/master/include/linux/socket.h
-(defcenum! address-families
-    ("<sys/socket.h>")
-  (AF_UNSPEC :unspec)
-  (AF_UNIX :unix)
-  (AF_LOCAL :local)
-  (AF_INET :inet)
-  (AF_AX25 :ax25)
-  (AF_IPX :ipx)
-  (AF_APPLETALK :appletalk)
-  (AF_NETROM :netrom)
-  (AF_BRIDGE :bridge)
-  (AF_ATMPVC :atmpvc)
-  (AF_X25 :x25)
-  (AF_INET6 :inet6)
-  (AF_ROSE :rose)
-  ;; (AF_DECnet :decnet)
-  (AF_NETBEUI :netbeui)
-  (AF_SECURITY :security)
-  (AF_KEY :key)
-  (AF_NETLINK :netlink)
-  (AF_ROUTE :route)
-  (AF_PACKET :packet)
-  (AF_ASH :ash)
-  (AF_ECONET :econet)
-  (AF_ATMSVC :atmsvc)
-  (AF_RDS :rds)
-  (AF_SNA :sna)
-  (AF_IRDA :irda)
-  (AF_PPPOX :pppox)
-  (AF_WANPIPE :wanpipe)
-  (AF_LLC :llc)
-  (AF_IB :ib)
-  (AF_MPLS :mpls)
-  (AF_CAN :can)
-  (AF_TIPC :tipc)
-  (AF_BLUETOOTH :bluetooth)
-  (AF_IUCV :iucv)
-  (AF_RXRPC :rxrpc)
-  (AF_ISDN :isdn)
-  (AF_PHONET :phonet)
-  (AF_IEEE802154 :ieee802154)
-  (AF_CAIF :caif)
-  (AF_ALG :alg)
-  (AF_NFC :nfc)
-  (AF_VSOCK :vsock)
-  (AF_KCM :kcm)
-  (AF_QIPCRTR :qipcrtr)
-  (AF_SMC :smc)
-  (AF_XDP :xdp)
-  (AF_MCTP :mctp)
-  (AF_MAX :max))
+(defun is-define-faulty (define)
+  "Check if a define value is faulty"
+  (let ((key (car define)) (value (cadr define)))
+    (cond
+      ((equal key value) (list key :missing)) ;; This most likely means that a define couldn't be found
+      ((not (is-number? value)) (list key :not-numeric))
+      (t nil))))
