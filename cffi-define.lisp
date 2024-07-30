@@ -50,7 +50,7 @@ with said headers included, and said defines being printed out via pragma messag
 	     (prog1
 		 (loop for line in (uiop/stream:slurp-stream-lines (uiop:process-info-error-output process))
 		       for result = (cl-ppcre:register-groups-bind (key value)
-					("#pragma message: (.+): (.+)’" line)
+					("#pragma message: (.+): (.+)[’']" line)
 				      (list key value))
 		       when result collect result)
 
